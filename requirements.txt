@@ -1,0 +1,5 @@
+python-telegram-bot
+motor
+httpx
+fastapi
+uvicorn
