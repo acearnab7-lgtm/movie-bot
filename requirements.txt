@@ -1,5 +1,5 @@
-python-telegram-bot
-motor
-httpx
-fastapi
-uvicorn
+python-telegram-bot==20.3
+fastapi==0.100.0
+httpx==0.24.1
+motor==3.3.1
+uvicorn==0.22.0
