@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 
 app = FastAPI()
 
-# --- ARNAB'S REAL TOKENS ---
+# --- ARNAB'S AUTOMATION TOKENS ---
 TOKEN = "8714574641:AAFgvBUoWBqGp0SvFjPu5hOitAQMU54RJ-k"
 SHRINKME_API = "282a7c2962630d599bf0f7b2a6ffa4cbc4623aa9" 
 MONGO_URL = "mongodb+srv://Arnab:Arnab123@cluster0.ya468bd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
@@ -15,10 +15,11 @@ collection = client['movie_bot_db']['links']
 
 @app.get("/")
 async def root():
-    return {"status": "success", "message": "Arnab's Fully Automatic Engine is Live!"}
+    return {"status": "success", "message": "Arnab's Full Auto Bot is Live!"}
 
 def auto_scrape_terabox(query):
-    """Automatically finds TeraBox links on the web."""
+    """Finds TeraBox links automatically on the web."""
+    # Searching DuckDuckGo Lite to avoid bot blocks
     search_url = f"https://duckduckgo.com/lite/?q=site:terabox.com+OR+site:1024tera.com+{query}+movie"
     headers = {'User-Agent': 'Mozilla/5.0'}
     try:
@@ -44,27 +45,27 @@ async def handle_webhook(request: Request):
                 requests.post(msg_url, json={"chat_id": chat_id, "text": "🎬 Send me any movie name to get your link!"})
                 return {"status": "ok"}
 
-            # 1. CHECK DATABASE FIRST
+            # 1. CHECK DATABASE FIRST (Fast reply for saved movies like KGF 2)
             existing = await collection.find_one({"name": movie_name})
             if existing:
                 requests.post(msg_url, json={"chat_id": chat_id, "text": f"✅ Found in Library!\n🔗 {existing['short_link']}"})
                 return {"status": "ok"}
 
-            # 2. AUTO-SEARCH IF NOT FOUND
+            # 2. AUTO-SEARCH IF NOT IN DATABASE
             requests.post(msg_url, json={"chat_id": chat_id, "text": f"🔎 Searching for '{movie_name}'..."})
             raw_link = auto_scrape_terabox(movie_name)
             
             if raw_link:
-                # 3. AUTO-MONETIZE (ShrinkMe API)
+                # 3. AUTO-MONETIZE via ShrinkMe API
                 shrink_url = f"https://shrinkme.io/api?api={SHRINKME_API}&url={raw_link}"
                 res = requests.get(shrink_url).json()
                 final_link = res.get('shortened_url', raw_link)
 
-                # 4. AUTO-SAVE TO MONGODB
+                # 4. AUTO-SAVE to MongoDB (so you never have to search it again)
                 await collection.insert_one({"name": movie_name, "short_link": final_link})
                 
-                requests.post(msg_url, json={"chat_id": chat_id, "text": f"🎬 Done! Monetized link generated:\n🔗 {final_link}"})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": f"🎬 Done! Link Generated:\n🔗 {final_link}"})
             else:
-                requests.post(msg_url, json={"chat_id": chat_id, "text": "❌ Movie not found yet. Try another name!"})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": "❌ Movie link not found automatically. Try a different name!"})
     except: pass
     return {"status": "ok"}
