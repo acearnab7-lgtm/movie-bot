@@ -12,29 +12,24 @@ MONGO_URL = "mongodb+srv://Arnab:Arnab123@cluster0.ya468bd.mongodb.net/?retryWri
 
 # Initialize Database
 client = AsyncIOMotorClient(MONGO_URL)
-db = client['movie_bot_db']
-collection = db['links']
+collection = client['movie_bot_db']['links']
 
 @app.get("/")
 def root():
-    return {"status": "success", "message": "Arnab's Master ShrinkMe Engine is Live!"}
+    return {"status": "success", "message": "Arnab's Master Engine is Live!"}
 
-def find_real_movie(query):
-    """Scrapes the web for actual TeraBox or NephoBox links."""
+def find_movie_on_web(query):
+    """Scrapes Google for actual TeraBox links."""
     search_url = f"https://www.google.com/search?q=site:terabox.com+OR+site:nephobox.com+{query}+movie+link"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    headers = {'User-Agent': 'Mozilla/5.0'}
     try:
-        r = requests.get(search_url, headers=headers, timeout=8)
+        r = requests.get(search_url, headers=headers, timeout=5)
         soup = BeautifulSoup(r.text, 'html.parser')
         for a in soup.find_all('a', href=True):
             link = a['href']
             if 'terabox.com/s/' in link or 'nephobox.com/s/' in link:
-                # Cleaning the link from Google's redirect format
-                if '/url?q=' in link:
-                    return link.split('/url?q=')[1].split('&')[0]
-                return link
-    except:
-        return None
+                return link.split('?q=')[1].split('&')[0] if '?q=' in link else link
+    except: return None
     return None
 
 @app.post("/api/index")
@@ -43,11 +38,12 @@ async def handle_webhook(request: Request):
         data = await request.json()
         if "message" in data:
             chat_id = data["message"]["chat"]["id"]
-            movie_name = data["message"].get("text", "").strip().lower()
+            user_text = data["message"].get("text", "").strip()
+            movie_name = user_text.lower()
             msg_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
             if movie_name == "/start":
-                requests.post(msg_url, json={"chat_id": chat_id, "text": "🎬 Welcome! Send me a Movie Name to get your monetized link."})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": "🎬 Send me a Movie Name to get your link!"})
                 return {"status": "ok"}
 
             # 1. Check MongoDB (Instant Response)
@@ -56,23 +52,25 @@ async def handle_webhook(request: Request):
                 requests.post(msg_url, json={"chat_id": chat_id, "text": f"✅ Found in Library!\n\n🔗 {existing['short_link']}"})
                 return {"status": "ok"}
 
-            # 2. Real Web Search
-            requests.post(msg_url, json={"chat_id": chat_id, "text": f"🔎 Searching for '{movie_name}'..."})
-            raw_link = find_real_movie(movie_name)
+            # 2. Status Update
+            requests.post(msg_url, json={"chat_id": chat_id, "text": f"🔎 Searching for '{user_text}'..."})
+
+            # 3. Real Web Search
+            raw_link = find_movie_on_web(movie_name)
             
             if not raw_link:
-                requests.post(msg_url, json={"chat_id": chat_id, "text": "❌ Movie not found yet. Try another name or check back later!"})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": "❌ Movie not found yet. Try another name!"})
                 return {"status": "ok"}
 
-            # 3. Monetize with your ShrinkMe.io Token
+            # 4. Monetize with ShrinkMe.io
             shrink_url = f"https://shrinkme.io/api?api={SHRINKME_API}&url={raw_link}"
             res = requests.get(shrink_url).json()
             final_link = res.get('shortened_url', raw_link)
 
-            # 4. Save to MongoDB
+            # 5. Save to MongoDB
             await collection.insert_one({"name": movie_name, "short_link": final_link})
 
-            requests.post(msg_url, json={"chat_id": chat_id, "text": f"🎬 Movie Found!\n\n🔗 {final_link}"})
+            requests.post(msg_url, json={"chat_id": chat_id, "text": f"🎬 Found!\n\n🔗 {final_link}"})
     except Exception as e:
         print(f"Error: {e}")
     return {"status": "ok"}
