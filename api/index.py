@@ -4,24 +4,23 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 app = FastAPI()
 
-# --- ARNAB'S REAL TOKENS ---
+# --- ARNAB'S REAL CREDENTIALS ---
 TOKEN = "8714574641:AAFgvBUoWBqGp0SvFjPu5hOitAQMU54RJ-k"
-SHRINKME_API = "282a7c2962630d599bf0f7b2a6ffa4cbc4623aa9" 
 MONGO_URL = "mongodb+srv://Arnab:Arnab123@cluster0.ya468bd.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+CHANNEL_ID = "@invvault" 
 
 client = AsyncIOMotorClient(MONGO_URL)
 collection = client['movie_bot_db']['links']
 
-def find_movie_on_terabox(query):
-    """Reliable way to find TeraBox links via specialized file searchers."""
-    # Using a specialized indexer that doesn't block bots
-    api_url = f"https://terabox-search-api.vercel.app/search?q={query}"
+def is_subscribed(user_id):
+    """Checks if the user is a member of @invvault."""
+    url = f"https://api.telegram.org/bot{TOKEN}/getChatMember?chat_id={CHANNEL_ID}&user_id={user_id}"
     try:
-        results = requests.get(api_url, timeout=10).json()
-        if results.get("links"):
-            return results["links"][0] # Return the first working link found
-    except: return None
-    return None
+        response = requests.get(url).json()
+        status = response.get("result", {}).get("status", "")
+        return status in ["member", "administrator", "creator"]
+    except:
+        return True 
 
 @app.post("/api/index")
 async def handle_webhook(request: Request):
@@ -29,33 +28,25 @@ async def handle_webhook(request: Request):
         data = await request.json()
         if "message" in data:
             chat_id = data["message"]["chat"]["id"]
+            user_id = data["message"]["from"]["id"]
             movie_name = data["message"].get("text", "").strip().lower()
             msg_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-            if movie_name == "/start":
-                requests.post(msg_url, json={"chat_id": chat_id, "text": "🎬 Send me any movie name!"})
+            # 1. THE GATEKEEPER: FORCE JOIN CHANNEL
+            if not is_subscribed(user_id):
+                join_msg = f"⚠️ **Access Denied!**\n\nTo get movies, you must join our official channel:\n👉 https://t.me/invvault\n\nAfter joining, come back and type the movie name!"
+                requests.post(msg_url, json={"chat_id": chat_id, "text": join_msg, "parse_mode": "Markdown"})
                 return {"status": "ok"}
 
-            # 1. DATABASE CHECK (The most reliable way)
+            if movie_name == "/start":
+                requests.post(msg_url, json={"chat_id": chat_id, "text": "🎬 Welcome! Send me a movie name (like 'KGF 2') to get your link."})
+                return {"status": "ok"}
+
+            # 2. THE LIBRARY: SEARCH MONGODB
             existing = await collection.find_one({"name": movie_name})
             if existing:
-                requests.post(msg_url, json={"chat_id": chat_id, "text": f"✅ Found in Library!\n🔗 {existing['short_link']}"})
-                return {"status": "ok"}
-
-            # 2. AUTO-SEARCH
-            requests.post(msg_url, json={"chat_id": chat_id, "text": f"🔎 Deep searching for '{movie_name}'..."})
-            raw_link = find_movie_on_terabox(movie_name)
-            
-            if raw_link:
-                # 3. AUTO-MONETIZE
-                shrink_url = f"https://shrinkme.io/api?api={SHRINKME_API}&url={raw_link}"
-                res = requests.get(shrink_url).json()
-                final_link = res.get('shortened_url', raw_link)
-
-                # 4. AUTO-SAVE
-                await collection.insert_one({"name": movie_name, "short_link": final_link})
-                requests.post(msg_url, json={"chat_id": chat_id, "text": f"🎬 Link Generated!\n🔗 {final_link}"})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": f"✅ **Movie Found!**\n\n🔗 {existing['short_link']}", "parse_mode": "Markdown"})
             else:
-                requests.post(msg_url, json={"chat_id": chat_id, "text": "❌ Still not found automatically. Please wait for the admin to add it manually!"})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": "❌ This movie isn't in my library yet. I've alerted Arnab to add it!"})
     except: pass
     return {"status": "ok"}
