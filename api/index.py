@@ -1,7 +1,6 @@
 import requests
 from fastapi import FastAPI, Request
 from motor.motor_asyncio import AsyncIOMotorClient
-from bs4 import BeautifulSoup
 
 app = FastAPI()
 
@@ -14,30 +13,24 @@ CHANNEL_ID = "@invvault"
 client = AsyncIOMotorClient(MONGO_URL)
 collection = client['movie_bot_db']['links']
 
-def auto_search_terabox(movie_name):
-    """Deep-Scraper: Tries multiple queries to bypass blocks."""
-    queries = [
-        f"site:terabox.com {movie_name} movie",
-        f"site:1024tera.com {movie_name} download",
-        f"\"{movie_name}\" terabox share link"
-    ]
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    
-    for q in queries:
-        try:
-            url = f"https://duckduckgo.com/lite/?q={q}"
-            r = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(r.text, 'html.parser')
-            for a in soup.find_all('a', href=True):
-                if 'terabox.com/s/' in a['href'] or '1024tera.com/s/' in a['href']:
-                    return a['href']
-        except: continue
+def find_terabox_automatic(movie_name):
+    """Deep-search for TeraBox links using dedicated file indexes."""
+    # Using a specialized search query for better results
+    search_url = f"https://duckduckgo.com/lite/?q=site:terabox.com+OR+site:1024tera.com+\"{movie_name}\"+movie"
+    try:
+        r = requests.get(search_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=10)
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(r.text, 'html.parser')
+        for a in soup.find_all('a', href=True):
+            if 'terabox.com/s/' in a['href'] or '1024tera.com/s/' in a['href']:
+                return a['href']
+    except: return None
     return None
 
 @app.get("/")
 @app.get("/api/index")
-async def health_check():
-    return {"status": "100% Automatic", "owner": "Arnab"}
+async def root():
+    return {"status": "Automatic Engine Online", "owner": "Arnab Mandal"}
 
 @app.post("/api/index")
 async def handle_webhook(request: Request):
@@ -49,28 +42,27 @@ async def handle_webhook(request: Request):
             msg_url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
             if text == "/start":
-                requests.post(msg_url, json={"chat_id": chat_id, "text": "🎬 Automation Engine Online! Send me any movie name."})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": "🎬 Full-Auto Engine Ready! Send me a movie name."})
                 return {"status": "ok"}
 
-            # 1. Check Database (Library)
+            # 1. Check MongoDB (Instant Response)
             existing = await collection.find_one({"name": text})
             if existing:
                 requests.post(msg_url, json={"chat_id": chat_id, "text": f"✅ Found!\n🔗 {existing['short_link']}"})
                 return {"status": "ok"}
 
-            # 2. Automation: Scrape, Monetize, and Save
-            requests.post(msg_url, json={"chat_id": chat_id, "text": f"🔎 Searching and monetizing '{text}'..."})
-            raw_link = auto_search_terabox(text)
+            # 2. Automation: Find, Monetize, and Save
+            requests.post(msg_url, json={"chat_id": chat_id, "text": f"🔎 Searching for '{text}'..."})
+            raw_link = find_terabox_automatic(text)
             
             if raw_link:
                 shrink_url = f"https://shrinkme.io/api?api={SHRINKME_API}&url={raw_link}"
                 res = requests.get(shrink_url).json()
                 final_link = res.get('shortened_url', raw_link)
 
-                # Save so it's ready for the next person
                 await collection.insert_one({"name": text, "short_link": final_link})
-                requests.post(msg_url, json={"chat_id": chat_id, "text": f"🎬 Done! Link Generated:\n🔗 {final_link}"})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": f"🎬 New Link Generated!\n🔗 {final_link}"})
             else:
-                requests.post(msg_url, json={"chat_id": chat_id, "text": "❌ Not found automatically yet. I've alerted Arnab!"})
+                requests.post(msg_url, json={"chat_id": chat_id, "text": "❌ Not found automatically yet. Try a different name!"})
     except: pass
     return {"status": "ok"}
